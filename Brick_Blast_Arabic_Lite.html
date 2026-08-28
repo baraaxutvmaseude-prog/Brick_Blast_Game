@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Brick Blast العربية — نسخة احترافية</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:#080b0e;color:#fff;font-family:Tahoma,Arial,sans-serif;overflow:hidden;height:100%;touch-action:none}
+body{display:flex;align-items:center;justify-content:center}
+#wrap{position:relative;width:min(100vw,66.6667vh);height:min(100vh,150vw);max-width:1024px;max-height:1536px}
+canvas{width:100%;height:100%;display:block;border-radius:18px;touch-action:none}
+.screen{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:7%;background:rgba(5,8,12,.72);backdrop-filter:blur(7px);z-index:20}
+.panel{width:100%;max-width:650px;background:linear-gradient(#343c44,#171c22);border:2px solid #818a92;border-radius:26px;padding:30px 28px;box-shadow:0 18px 70px #000c,inset 0 0 30px #fff1;text-align:center}
+h1{margin:0 0 7px;font-size:clamp(30px,6vw,62px);text-shadow:0 3px 0 #000}h2{margin:0 0 12px;font-size:clamp(26px,5vw,48px)}p{color:#e0e5e9;line-height:1.7;font-size:clamp(15px,2.8vw,22px)}
+.btn{width:100%;border:0;border-radius:16px;padding:15px 18px;margin-top:12px;font-weight:800;font-size:clamp(16px,3vw,23px);color:#fff;background:linear-gradient(#4b86ed,#214eaa);box-shadow:0 6px 0 #102e66,0 12px 25px #0006;cursor:pointer}.btn:active{transform:translateY(3px)}
+.btn.secondary{background:linear-gradient(#626a71,#30363b);box-shadow:0 6px 0 #171a1d}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.badge{display:inline-block;margin:6px 3px;padding:7px 11px;border-radius:999px;background:#111a;border:1px solid #78828c;color:#f4f6f8;font-size:13px}.hidden{display:none!important}
+#toast{position:absolute;left:50%;top:13%;transform:translate(-50%,-10px) scale(.96);background:linear-gradient(135deg,#18202aee,#080c11ee);color:#fff;border:1px solid #8fa5bd;border-radius:16px;padding:13px 20px;z-index:30;opacity:0;pointer-events:none;transition:.22s;white-space:nowrap;box-shadow:0 10px 35px #0009,inset 0 1px 0 #fff2;font-weight:800;font-size:clamp(15px,3vw,24px);text-align:center}#toast.show{opacity:1;transform:translate(-50%,0) scale(1)}
+</style>
+
+<style id="sound-style">
+#soundHint{position:absolute;right:50%;bottom:10px;transform:translateX(50%);
+font-size:12px;color:#cfd7df;opacity:.72;z-index:25;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="1024" height="1536"></canvas><div id="toast"></div>
+<div id="menu" class="screen"><div class="panel"><h1>BRICK BLAST</h1><p><b>نسخة عربية محسّنة</b><br>تصويب دقيق، ارتداد ثابت، مسارات متوقعة، ومكعبات خاصة.</p><div><span class="badge">💥 مكعب متفجر</span><span class="badge">🔵 كرات إضافية</span><span class="badge">🎯 مسار ارتداد</span><span class="badge">🔇 هدوء</span></div><button class="btn" id="startBtn">ابدأ اللعب</button><button class="btn secondary" id="quietBtn">الوضع الهادئ: تشغيل</button><p style="font-size:13px;margin-top:18px">واجهة عائلية هادئة، بدون إعلانات أو محتوى غير مناسب.</p></div></div>
+<div id="soundHint">🔊 مؤثرات صوتية تفاعلية</div><div id="gameover" class="screen hidden"><div class="panel"><h2>انتهت اللعبة</h2><p>وصل أحد المكعبات إلى خط النهاية.</p><div class="row"><div class="badge" style="font-size:18px">النتيجة<br><b id="finalScore">0</b></div><div class="badge" style="font-size:18px">أعلى نتيجة<br><b id="finalBest">0</b></div></div><button class="btn" id="againBtn">العب من جديد</button><button class="btn secondary" id="homeBtn">العودة للقائمة</button></div></div></div>
+<script>
+(()=>{'use strict';
+
+// ===== مؤثرات صوتية احترافية خفيفة (Web Audio API) =====
+const SFX = (() => {
+  let ac = null, master = null, enabled = true, lastBounce = 0;
+
+  function init(){
+    if(!ac){
+      const C = window.AudioContext || window.webkitAudioContext;
+      if(!C) return false;
+      ac = new C();
+      master = ac.createGain();
+      master.gain.value = 0.16;
+      master.connect(ac.destination);
+    }
+    if(ac.state === 'suspended') ac.resume();
+    return true;
+  }
+
+  function tone(freq, duration, type='sine', volume=.12, endFreq=null, delay=0){
+    if(!enabled || !init()) return;
+    const t = ac.currentTime + delay;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(Math.max(40,freq), t);
+    if(endFreq) o.frequency.exponentialRampToValueAtTime(Math.max(40,endFreq), t+duration);
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.exponentialRampToValueAtTime(Math.max(.0001,volume),t+.008);
+    g.gain.exponentialRampToValueAtTime(.0001,t+duration);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t+duration+.02);
+  }
+
+  function noise(duration=.25, volume=.14, cutoff=900, delay=0){
+    if(!enabled || !init()) return;
+    const t=ac.currentTime+delay, len=Math.floor(ac.sampleRate*duration);
+    const b=ac.createBuffer(1,len,ac.sampleRate), d=b.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+    const s=ac.createBufferSource(), f=ac.createBiquadFilter(), g=ac.createGain();
+    s.buffer=b; f.type='lowpass'; f.frequency.value=cutoff;
+    g.gain.setValueAtTime(volume,t); g.gain.exponentialRampToValueAtTime(.0001,t+duration);
+    s.connect(f); f.connect(g); g.connect(master); s.start(t);
+  }
+
+  return {
+    unlock(){ init(); },
+    setEnabled(v){ enabled=!!v; },
+    bounce(strength=1){
+      const now=performance.now();
+      if(now-lastBounce<45) return; // يمنع طقطقة زائدة عند الارتدادات السريعة
+      lastBounce=now;
+      tone(170+Math.min(90,strength*20),.055,'sine',.045,105);
+    },
+    hit(){
+      tone(520,.045,'triangle',.035,390);
+    },
+    extra(){
+      // صوت XP صاعد: ثلاث نغمات متدرجة
+      tone(620,.10,'sine',.09,760,0);
+      tone(820,.11,'sine',.08,1020,.075);
+      tone(1120,.16,'sine',.07,1380,.15);
+    },
+    bomb(){
+      // ضربة منخفضة + ضوضاء قصيرة لإحساس انفجار
+      tone(95,.30,'sine',.20,48);
+      tone(180,.18,'sawtooth',.08,65,.025);
+      noise(.34,.18,650,.02);
+    },
+    star(){
+      tone(760,.10,'sine',.065,980);
+      tone(1040,.14,'sine',.055,1320,.09);
+    },
+    gameover(){
+      tone(260,.18,'sine',.08,190);
+      tone(170,.28,'sine',.07,90,.16);
+    }
+  };
+})();
+
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const W=1024,H=1536;const menu=document.getElementById('menu'),over=document.getElementById('gameover'),toast=document.getElementById('toast');
+const finalScore=document.getElementById('finalScore'),finalBest=document.getElementById('finalBest');
+let running=false,paused=false,quiet=true,score=0,best=Number(localStorage.getItem('bb_best')||0),turn=0;
+let ballCount=6,balls=[],bricks=[],particles=[],texts=[],shake=0,combo=0;let powerTimer=0;
+let cannonX=W/2,aim={x:0,y:-1},firing=false,launchIndex=0,launchTimer=0,turnResolved=false,last=0,acc=0;let lastMilestone=0;let hudTick=0;
+const FIXED=1/120,SPEED=690,R=14;
+const play={left:55,right:969,top:145,bottom:1308,end:1110};
+const colors={purple:'#7b2de2',red:'#e33b32',yellow:'#f4bf12'};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function rounded(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill()}
+function label(t,x,y,size,color='#fff',weight=700){ctx.save();ctx.fillStyle=color;ctx.font=`${weight} ${size}px Tahoma,Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.direction='rtl';ctx.fillText(t,x,y);ctx.restore()}
+function light(hex,d=45){let n=parseInt(hex.slice(1),16),r=Math.min(255,(n>>16)+d),g=Math.min(255,((n>>8)&255)+d),b=Math.min(255,(n&255)+d);return`rgb(${r},${g},${b})`}
+function dark(hex,d=55){let n=parseInt(hex.slice(1),16),r=Math.max(0,(n>>16)-d),g=Math.max(0,((n>>8)&255)-d),b=Math.max(0,(n&255)-d);return`rgb(${r},${g},${b})`}
+function drawBall(x,y,r=R,shine=true){let g=ctx.createRadialGradient(x-r*.35,y-r*.45,2,x,y,r*1.2);g.addColorStop(0,'#fff');g.addColorStop(.13,'#78a9ff');g.addColorStop(.55,'#1260d8');g.addColorStop(1,'#062a75');ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();if(shine){ctx.fillStyle='#fff9';ctx.beginPath();ctx.arc(x-r*.32,y-r*.38,r*.2,0,Math.PI*2);ctx.fill()}}
+function metalGrad(a,b){let g=ctx.createLinearGradient(0,a,0,b);g.addColorStop(0,'#8e969e');g.addColorStop(.12,'#242a30');g.addColorStop(.5,'#555e66');g.addColorStop(.88,'#1b2025');g.addColorStop(1,'#8c949b');return g}
+function drawFrame(){
+ ctx.clearRect(0,0,W,H);ctx.fillStyle='#11161a';ctx.fillRect(0,0,W,H);ctx.fillStyle=metalGrad(0,H);ctx.fillRect(12,12,W-24,H-24);ctx.strokeStyle='#b6bdc3';ctx.lineWidth=4;ctx.strokeRect(24,24,W-48,H-48);
+ ctx.fillStyle='#11171c';rounded(36,130,W-72,H-250,32);let pg=ctx.createLinearGradient(0,150,0,1310);pg.addColorStop(0,'#9da4a9');pg.addColorStop(.48,'#c1c5c7');pg.addColorStop(1,'#8e9599');ctx.fillStyle=pg;rounded(52,145,W-104,1165,26);
+ ctx.globalAlpha=.08;for(let i=0;i<100;i++){ctx.fillStyle=i%2?'#fff':'#000';ctx.fillRect(60+(i*97)%900,155+(i*53)%1110,2,2)}ctx.globalAlpha=1;
+ ctx.fillStyle='#20262c';rounded(38,30,240,88,18);rounded(292,30,240,88,18);rounded(546,30,240,88,18);ctx.fillStyle='#22282e';rounded(806,30,180,88,18);
+ label('الكرات',158,59,23);label(String(ballCount),158,99,44);label('النتيجة',412,59,23);label(String(score),412,99,44);label('أعلى نتيجة',666,59,23);label(String(best),666,99,44);if(powerTimer>0){label('⚡ قوة خارقة '+Math.ceil(powerTimer)+'ث',666,122,15,'#ffe37b',800);}
+ ctx.fillStyle='#232a30';rounded(48,35,75,78,15);label(paused?'▶':'Ⅱ',85,87,40);label(quiet?'🔇':'🔊',896,88,38);
+ ctx.fillStyle='#1d242a';rounded(45,1360,350,130,20);rounded(620,1360,365,130,20);label('اسحب لتوجيه المدفع',220,1406,24);label('←                 →',220,1450,27);
+ label('الكرات',690,1400,24);label(String(ballCount),760,1400,36,'#2f76e8');for(let i=0;i<Math.min(10,ballCount);i++)drawBall(650+i*32,1450,10,false);
+ ctx.fillStyle='#313940';rounded(500,1387,105,60,16);label('↩',552,1418,29);label('إرجاع',552,1441,12,'#dbe2e7');
+}
+function drawBricks(){for(const b of bricks){if(b.dead)continue;let col=colors[b.color];let g=ctx.createLinearGradient(b.x,b.y,b.x,b.y+b.h);g.addColorStop(0,light(col));g.addColorStop(.5,col);g.addColorStop(1,dark(col));ctx.save();ctx.shadowColor='#0008';ctx.shadowBlur=0;ctx.shadowOffsetY=7;ctx.fillStyle=g;rounded(b.x,b.y,b.w,b.h,12);ctx.restore();ctx.strokeStyle='#fff8';ctx.lineWidth=2;ctx.stroke();if(b.type==='bomb')label('💥',b.x+b.w/2,b.y+b.h/2-3,23);else if(b.type==='extra')label('＋🔵',b.x+b.w/2,b.y+b.h/2-3,21);else if(b.type==='power')label('⚡ '+b.hp,b.x+b.w/2,b.y+b.h/2,22,'#fff',800);else if(b.type==='star')label('★ '+b.hp,b.x+b.w/2,b.y+b.h/2,22,'#fff',800);else label(String(b.hp),b.x+b.w/2,b.y+b.h/2+1,27)}}
+function makeRow(y,forceCount=null){const cols=8,bw=91,bh=88,gap=15,startX=65,count=forceCount??(3+Math.floor(Math.random()*4)),used=[];while(used.length<count){let c=Math.floor(Math.random()*cols);if(!used.includes(c))used.push(c)}used.sort((a,b)=>a-b);
+ // موازنة قوة المكعبات مع عدد الكرات: كل كرة إضافية ترفع القيم تدريجيًا، مع بقاء الصعوبة عادلة.
+ const ballScale=1+Math.max(0,ballCount-6)*0.12;
+ for(const c of used){let type=Math.random()<.09?'bomb':Math.random()<.11?'extra':Math.random()<.07?'power':Math.random()<.06?'star':'normal';let base=Math.max(1,Math.floor(turn*.7+Math.random()*7)+1);let hp=Math.max(1,Math.round(base*ballScale));if(type==='star')hp+=Math.max(2,Math.round(2*ballScale));bricks.push({x:startX+c*(bw+gap),y,w:bw,h:bh,hp,type,color:['purple','red','yellow'][Math.floor(Math.random()*3)],dead:false,hitLock:0})}}
+function makeLevel(){bricks=[];turn=0;makeRow(190,5);makeRow(293,5);makeRow(396,5);makeRow(499,4);makeRow(602,4);makeRow(705,3)}
+function nextRow(){turn++;for(const b of bricks)if(!b.dead)b.y+=103;makeRow(190);checkDanger()}
+function spawn(x,y,n=12,type='hit'){for(let i=0;i<n;i++){let a=Math.random()*Math.PI*2,s=70+Math.random()*330;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.35+Math.random()*.6,type})}}
+function pop(text,x,y,color='#fff'){texts.push({text,x,y,life:1,color})}
+function hitBrick(b,ball){
+ if(b.dead||b.hitLock>0)return;
+ b.hitLock=.055;
+ combo++;
+ const comboBonus=1+Math.min(4,Math.floor(combo/8));
+ score+=comboBonus;
+ spawn(ball.x,ball.y,3);
+ pop('+'+comboBonus,b.x+b.w/2,b.y-5);
+ if(combo>=5 && combo%5===0 && combo!==lastMilestone){
+   lastMilestone=combo;
+   const msgs={5:'🔥 ممتاز! بداية كومبو رائع!',10:'⚡ رائع! 10 ضربات متتالية!',15:'🎯 احتراف! استمر على نفس الدقة!',20:'🏆 مذهل! أنت مسيطر على الجولة!',25:'🚀 مستوى خرافي! لا توقف الكومبو!'};
+   toastMsg(msgs[combo]||('🔥 '+combo+' ضربات متتالية! أداء رائع!'));
+ }
+ b.hp--;
+ if(b.hp>0)return;
+ b.dead=true;
+ spawn(b.x+b.w/2,b.y+b.h/2,b.type==='bomb'?18:10,b.type);
+ if(b.type==='extra'){SFX.extra();
+   ballCount+=3;
+   pop('+3 🔵',b.x+b.w/2,b.y-12,'#9cc3ff');
+   pop('قيم المكعبات ↑',b.x+b.w/2,b.y+28,'#ffe37b');
+   toastMsg('🔵 ممتاز! +3 كرات — قوتك زادت!');
+ }else if(b.type==='bomb'){SFX.bomb();
+   let cx=b.x+b.w/2,cy=b.y+b.h/2,destroyed=0;
+   for(const n of bricks){
+     if(n.dead||n===b)continue;
+     let dx=n.x+n.w/2-cx,dy=n.y+n.h/2-cy,d=Math.hypot(dx,dy);
+     if(d<175){
+       n.hp-=Math.max(2,Math.ceil(5-d/45));
+       if(n.hp<=0){n.dead=true;destroyed++;score+=2;spawn(n.x+n.w/2,n.y+n.h/2,7,'chain');}
+     }
+   }
+   score+=6;pop('💥 انفجار!',cx,cy-12,'#ffe37b');
+   toastMsg(destroyed>=3?'💥 ضربة ممتازة! انفجار متسلسل!':'💥 بوم! استغل الانفجار لصنع كومبو أكبر!');
+ }else if(b.type==='star'){SFX.star();
+   score+=10;pop('+10 ⭐',b.x+b.w/2,b.y-12,'#fff09a');toastMsg('⭐ رائع! مكعب نجمة — +10 نقاط!');
+ }
+ if(b.hp<=0 && b.type==='normal' && combo>0 && combo%3===0 && combo!==lastEncouragement){
+   lastEncouragement=combo;toastMsg(combo>=12?'🏆 أداء احترافي! استمر!':'👏 ممتاز! ضربة موفقة!');
+ }
+}
+function normalizeAim(dx,dy){let len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;if(dy>-0.25)dy=-0.25;len=Math.hypot(dx,dy);return{x:dx/len,y:dy/len}}
+function aimFromPoint(x,y){let dx=x-cannonX,dy=y-1280;aim=normalizeAim(dx,dy)}
+function launchOne(){if(launchIndex>=ballCount){firing=false;return}let spread=0; // deterministic stream, no random spread
+ balls.push({x:cannonX,y:1276,vx:aim.x*SPEED,vy:aim.y*SPEED,r:R,trail:[],cool:0,alive:true});launchIndex++;launchTimer=.075}
+function shoot(){if(!running||paused||firing)return;if(ballCount<1)return;firing=true;launchIndex=0;launchTimer=0;turnResolved=false;combo=0}
+function returnBalls(){if(!running||paused)return;if(balls.length||firing){balls.length=0;firing=false;launchIndex=0;launchTimer=0;turnResolved=true;pop('↩ تم الإرجاع',cannonX,1260,'#fff');toastMsg('رجعت الكرات للمدفع — تم إعادة التعبئة')} }
+function circleRect(ball,b){let nx=clamp(ball.x,b.x,b.x+b.w),ny=clamp(ball.y,b.y,b.y+b.h),dx=ball.x-nx,dy=ball.y-ny,d2=dx*dx+dy*dy;if(d2>ball.r*ball.r)return null;let d=Math.sqrt(d2);if(d<.0001){let dl=Math.abs(ball.x-b.x),dr=Math.abs(ball.x-(b.x+b.w)),dt=Math.abs(ball.y-b.y),db=Math.abs(ball.y-(b.y+b.h));let m=Math.min(dl,dr,dt,db);if(m===dl)return{x:-1,y:0,d:ball.r};if(m===dr)return{x:1,y:0,d:ball.r};if(m===dt)return{x:0,y:-1,d:ball.r};return{x:0,y:1,d:ball.r}}return{x:dx/d,y:dy/d,d}
+}
+function physicsStep(dt){powerTimer=Math.max(0,powerTimer-dt);for(const b of bricks)b.hitLock=Math.max(0,b.hitLock-dt);if(firing){launchTimer-=dt;if(launchTimer<=0)launchOne()}
+ let returned=0;for(let i=balls.length-1;i>=0;i--){let ball=balls[i];let remaining=dt;let guard=0;while(remaining>0&&guard++<4){let step=Math.min(remaining,.008);remaining-=step;ball.x+=ball.vx*step;ball.y+=ball.vy*step;
+  if(ball.x-ball.r<play.left){ball.x=play.left+ball.r;ball.vx=Math.abs(ball.vx);spawn(ball.x,ball.y,4,'wall');SFX.bounce()}
+  if(ball.x+ball.r>play.right){ball.x=play.right-ball.r;ball.vx=-Math.abs(ball.vx);spawn(ball.x,ball.y,4,'wall');SFX.bounce()}
+  if(ball.y-ball.r<play.top){ball.y=play.top+ball.r;ball.vy=Math.abs(ball.vy);spawn(ball.x,ball.y,4,'wall');SFX.bounce()}
+  let sp=Math.hypot(ball.vx,ball.vy)||SPEED;if(Math.abs(ball.vy)/sp<.22){let sy=ball.vy<0?-1:1;ball.vy=sy*sp*.24;ball.vx=Math.sign(ball.vx||1)*Math.sqrt(Math.max(1,sp*sp-ball.vy*ball.vy))}
+  let hit=null;for(const b of bricks){if(b.dead)continue;let c=circleRect(ball,b);if(c){hit={b,c};break}}
+  if(hit){let {b,c}=hit,vn=ball.vx*c.x+ball.vy*c.y;if(vn<0){ball.x+=c.x*(ball.r-c.d+.7);ball.y+=c.y*(ball.r-c.d+.7);ball.vx-=2*vn*c.x;ball.vy-=2*vn*c.y;hitBrick(b,ball);SFX.hit();let s=Math.hypot(ball.vx,ball.vy)||SPEED;ball.vx*=SPEED/s;ball.vy*=SPEED/s}}
+  ball.cool=Math.max(0,ball.cool-step);ball.trail.push({x:ball.x,y:ball.y});if(ball.trail.length>8)ball.trail.shift();
+  if(ball.y-ball.r>play.bottom){balls.splice(i,1);returned++;break}
+ }
+ }
+ if(firing&&launchIndex>=ballCount&&balls.length===0)firing=false;
+ if(!firing&&balls.length===0&&!turnResolved){
+ turnResolved=true;
+ const alive=bricks.filter(b=>!b.dead).length;
+ if(!alive){toastMsg('🏆 جولة مثالية! أحسنت! الجولة التالية أصعب.');nextRow();}
+ else{if(combo>=8)toastMsg('👏 جولة قوية! حافظ على تركيزك.');nextRow();}
+}
+checkDanger();
+if(score>best){best=score;localStorage.setItem('bb_best',best);if(score>0&&score%25===0)toastMsg('🏅 رقم قياسي جديد! واصل التحدي!')} }
+function checkDanger(){if(bricks.some(b=>!b.dead&&b.y+b.h>=play.end)){endGame()}}
+function trajectory(){if(!running||firing||paused)return;let x=cannonX,y=1276,vx=aim.x,vy=aim.y;let segs=[];for(let k=0;k<5;k++){let bestT=2,bestN=null; if(vx>0)bestT=Math.min(bestT,(play.right-R-x)/vx),bestN={x:-1,y:0};else if(vx<0){let t=(play.left+R-x)/vx;if(t>0&&t<bestT){bestT=t;bestN={x:1,y:0}}}
+ if(vy<0){let t=(play.top+R-y)/vy;if(t>0&&t<bestT){bestT=t;bestN={x:0,y:1}}}
+ // preview bricks by ray-vs-expanded AABB
+ for(const b of bricks){if(b.dead)continue;let minX=b.x-R,maxX=b.x+b.w+R,minY=b.y-R,maxY=b.y+b.h+R;let tx1=(minX-x)/vx,tx2=(maxX-x)/vx,ty1=(minY-y)/vy,ty2=(maxY-y)/vy;let tx=Math.min(tx1,tx2),tX=Math.max(tx1,tx2),ty=Math.min(ty1,ty2),tY=Math.max(ty1,ty2),tEnter=Math.max(tx,ty,0),tExit=Math.min(tX,tY);if(tExit>=tEnter&&tEnter>0&&tEnter<bestT){bestT=tEnter;bestN=Math.abs(tx-ty)>0.001?(tx>ty?{x:Math.sign(vx)*-1,y:0}:{x:0,y:Math.sign(vy)*-1}):{x:0,y:-1}}}
+ if(bestT===2||!bestN){segs.push({x1:x,y1:y,x2:x+vx*700,y2:y+vy*700});break}let nx=x+vx*bestT,ny=y+vy*bestT;segs.push({x1:x,y1:y,x2:nx,y2:ny});x=nx+bestN.x*.8;y=ny+bestN.y*.8;let dot=vx*bestN.x+vy*bestN.y;vx-=2*dot*bestN.x;vy-=2*dot*bestN.y;if(vy>-0.24){vy=-.24;let s=Math.hypot(vx,vy);vx=Math.sign(vx||1)*Math.sqrt(Math.max(.01,s*s-vy*vy))}}
+ ctx.save();ctx.lineWidth=4;ctx.strokeStyle='#ffffffcc';ctx.setLineDash([12,13]);ctx.lineCap='round';for(const s of segs){ctx.beginPath();ctx.moveTo(s.x1,s.y1);ctx.lineTo(s.x2,s.y2);ctx.stroke()}ctx.setLineDash([]);ctx.fillStyle='#fff';let last=segs[0];if(last){let a=Math.atan2(last.y2-last.y1,last.x2-last.x1);let px=last.x2,py=last.y2;ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px-18*Math.cos(a-.45),py-18*Math.sin(a-.45));ctx.lineTo(px-18*Math.cos(a+.45),py-18*Math.sin(a+.45));ctx.closePath();ctx.fill()}ctx.restore()}
+function drawCannon(){ctx.save();ctx.translate(cannonX,1325);let ang=Math.atan2(aim.y,aim.x)+Math.PI/2;ctx.rotate(ang);let g=ctx.createLinearGradient(-55,0,55,0);g.addColorStop(0,'#14191d');g.addColorStop(.5,'#7d858b');g.addColorStop(1,'#151a1e');ctx.fillStyle=g;ctx.beginPath();ctx.roundRect(-48,-35,96,130,28);ctx.fill();ctx.fillStyle='#101419';ctx.beginPath();ctx.arc(0,0,49,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#a9b0b5';ctx.lineWidth=4;ctx.stroke();drawBall(0,0,22);ctx.restore();trajectory()}
+function render(){drawFrame();drawBricks();ctx.save();ctx.strokeStyle='#d33';ctx.lineWidth=4;ctx.setLineDash([18,14]);ctx.beginPath();ctx.moveTo(55,play.end);ctx.lineTo(969,play.end);ctx.stroke();ctx.restore();label('▼  خط النهاية  ▼',210,1140,23,'#d22');for(const b of balls){for(let i=0;i<b.trail.length;i++){let t=b.trail[i],q=(i+1)/b.trail.length;drawBall(t.x,t.y,Math.max(3,R*q*.45),false)}drawBall(b.x,b.y,b.r)}for(const p of particles){ctx.globalAlpha=Math.max(0,p.life);drawBall(p.x,p.y,4+7*p.life,false);ctx.globalAlpha=1}for(const t of texts){ctx.globalAlpha=t.life;label(t.text,t.x,t.y,18,t.color);ctx.globalAlpha=1}drawCannon()}
+function updateEffects(dt){for(let i=particles.length-1;i>=0;i--){let p=particles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=250*dt;p.life-=dt;if(p.life<=0)particles.splice(i,1)}for(let i=texts.length-1;i>=0;i--){let t=texts[i];t.y-=30*dt;t.life-=dt;if(t.life<=0)texts.splice(i,1)}if(shake>0)shake=Math.max(0,shake-dt)}
+function frame(t){let dt=Math.min(.05,(t-last)/1000||0);last=t;updateEffects(dt);if(running&&!paused){acc+=dt;let n=0;while(acc>=FIXED&&n++<12){physicsStep(FIXED);acc-=FIXED}}render();requestAnimationFrame(frame)}
+function startGame(){menu.classList.add('hidden');over.classList.add('hidden');running=true;paused=false;score=0;turn=0;ballCount=6;balls=[];particles=[];texts=[];firing=false;launchIndex=0;turnResolved=false;cannonX=W/2;aim={x:0,y:-1};lastMilestone=0;powerTimer=0;makeLevel();toastMsg('🎯 صوّب بدقة واستمتع باللعب!')}
+function endGame(){if(!running)return;SFX.gameover();running=false;firing=false;finalScore.textContent=score;finalBest.textContent=best;over.classList.remove('hidden')}
+function toastMsg(t){toast.textContent=t;toast.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>toast.classList.remove('show'),1700)}
+startBtn.onclick=startGame;againBtn.onclick=startGame;homeBtn.onclick=()=>{running=false;over.classList.add('hidden');menu.classList.remove('hidden')};quietBtn.onclick=()=>{quiet=!quiet;SFX.setEnabled(!quiet);SFX.unlock();quietBtn.textContent='الوضع الهادئ: '+(quiet?'تشغيل':'إيقاف')};
+let dragging=false;function pos(e){let r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}}
+canvas.addEventListener('pointerdown',e=>{SFX.unlock();let p=pos(e);if(p.x<130&&p.y<125&&running){paused=!paused;return}if(p.x>800&&p.y<125){quiet=!quiet;return}if(p.x>490&&p.x<615&&p.y>1380&&p.y<1460){returnBalls();return}if(p.y<1360){dragging=true;aimFromPoint(p.x,p.y);shoot()}});
+canvas.addEventListener('pointermove',e=>{if(dragging){let p=pos(e);if(p.y<1360)aimFromPoint(p.x,p.y)}});canvas.addEventListener('pointerup',()=>dragging=false);canvas.addEventListener('pointercancel',()=>dragging=false);
+render();requestAnimationFrame(frame);
+})();
+</script></body></html>
